@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>首角度検出システム</title>
+    <title>顔の向き検出システム</title>
     <style>
         * {
             margin: 0;
@@ -230,7 +230,7 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>🧘 首角度検出システム</h1>
+            <h1>🧘 顔の向き検出システム</h1>
             <p>正しい姿勢を保ちましょう</p>
         </div>
 
@@ -242,11 +242,11 @@
         <div class="info-panel">
             <div class="angle-display" id="angleDisplay">
                 <div class="angle-value" id="angleValue">--°</div>
-                <div class="angle-label">首の前傾角度</div>
+                <div class="angle-label">顔の下向き角度</div>
             </div>
 
             <div class="warning-message" id="warningMessage">
-                <strong>⚠️ 警告:</strong> 首の角度が30度を超えています。姿勢を正してください。
+                <strong>⚠️ 警告:</strong> 顔が30度以上下を向いています。姿勢を正してください。
             </div>
 
             <div class="metrics">
@@ -274,8 +274,8 @@
                 <ul>
                     <li>スマホのカメラとモーションセンサーへのアクセスを許可してください</li>
                     <li>前面カメラで顔を映してください</li>
-                    <li>首の角度が30度以上になると警告が表示されます</li>
-                    <li>デバイスを傾けた場合も正確に首の角度を計算します</li>
+                    <li>顔が30度以上下を向くと警告が表示されます</li>
+                    <li>デバイスを傾けた場合も正確に顔の向きを計算します</li>
                 </ul>
             </div>
         </div>
@@ -293,7 +293,7 @@
         let deviceOrientation = { beta: 0, gamma: 0, alpha: 0 };
         let isRunning = false;
         let lastFaceAngle = 0;
-        let smoothedNeckAngle = 0;
+        let smoothedFaceAngle = 0;
         const SMOOTHING_FACTOR = 0.3;
 
         // MediaPipe Face Meshのセットアップ
@@ -341,14 +341,14 @@
                 const faceAngle = calculateFaceAngle(landmarks);
                 lastFaceAngle = faceAngle;
 
-                // 首の角度を計算
-                const neckAngle = calculateNeckAngle(faceAngle, deviceOrientation);
+                // 顔の向き（下向き角度）を計算
+                const faceDirection = calculateFaceDirection(faceAngle, deviceOrientation);
 
                 // 平滑化
-                smoothedNeckAngle = smoothedNeckAngle * (1 - SMOOTHING_FACTOR) + neckAngle * SMOOTHING_FACTOR;
+                smoothedFaceAngle = smoothedFaceAngle * (1 - SMOOTHING_FACTOR) + faceDirection * SMOOTHING_FACTOR;
 
                 // UIを更新
-                updateUI(smoothedNeckAngle, faceAngle, deviceOrientation.beta);
+                updateUI(smoothedFaceAngle, faceAngle, deviceOrientation.beta);
 
                 // 重要なポイントを描画
                 drawKeyPoints(canvasCtx, landmarks, canvasElement.width, canvasElement.height);
@@ -393,23 +393,23 @@
             return avgAngle;
         }
 
-        // 実際の首の角度を計算
-        function calculateNeckAngle(faceAngle, deviceOrientation) {
+        // 実際の顔の向き（下向き角度）を計算
+        function calculateFaceDirection(faceAngle, deviceOrientation) {
             // デバイスのベータ角度（前後の傾き）
             // beta: 90 = デバイスが立っている, 0 = デバイスが平面
             let deviceTilt = deviceOrientation.beta || 0;
 
             // デバイスが立っている状態(90度)を基準にする
-            // デバイスが前に傾くほど、首の角度も増える
+            // デバイスが前に傾くほど、顔の下向き角度も増える
             let deviceAngleContribution = 90 - deviceTilt;
 
-            // 実際の首の角度 = 顔の下向き角度 + デバイスの前傾角度
-            let neckAngle = faceAngle + deviceAngleContribution;
+            // 実際の顔の向き = 顔の下向き角度 + デバイスの前傾角度
+            let faceDirection = faceAngle + deviceAngleContribution;
 
             // 0度を基準に正規化（まっすぐ前を見ている状態が0度）
-            neckAngle = Math.max(0, neckAngle);
+            faceDirection = Math.max(0, faceDirection);
 
-            return neckAngle;
+            return faceDirection;
         }
 
         // 重要なポイントを描画
@@ -434,19 +434,19 @@
         }
 
         // UIを更新
-        function updateUI(neckAngle, faceAngle, deviceBeta) {
+        function updateUI(faceDirectionAngle, facePitchAngle, deviceBeta) {
             const angleValue = document.getElementById('angleValue');
             const faceAngleEl = document.getElementById('faceAngle');
             const deviceAngleEl = document.getElementById('deviceAngle');
             const angleDisplay = document.getElementById('angleDisplay');
             const warningMessage = document.getElementById('warningMessage');
 
-            angleValue.textContent = Math.round(neckAngle) + '°';
-            faceAngleEl.textContent = Math.round(faceAngle) + '°';
+            angleValue.textContent = Math.round(faceDirectionAngle) + '°';
+            faceAngleEl.textContent = Math.round(facePitchAngle) + '°';
             deviceAngleEl.textContent = Math.round(90 - (deviceBeta || 90)) + '°';
 
             // 30度以上で警告
-            if (neckAngle >= 30) {
+            if (faceDirectionAngle >= 30) {
                 angleDisplay.classList.add('warning');
                 warningMessage.classList.add('active');
             } else {
