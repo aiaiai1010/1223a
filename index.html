@@ -1,1 +1,591 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>首角度検出システム</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
 
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 600px;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            margin-bottom: 5px;
+        }
+
+        .header p {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        .video-container {
+            position: relative;
+            width: 100%;
+            background: #000;
+        }
+
+        #video {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        #canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        .info-panel {
+            padding: 20px;
+        }
+
+        .angle-display {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 15px;
+            text-align: center;
+            margin-bottom: 20px;
+            transition: all 0.3s ease;
+        }
+
+        .angle-display.warning {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                transform: scale(1);
+            }
+            50% {
+                transform: scale(1.02);
+            }
+        }
+
+        .angle-value {
+            font-size: 48px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .angle-label {
+            font-size: 16px;
+            opacity: 0.9;
+        }
+
+        .metrics {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .metric-card {
+            background: #f7f7f7;
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .metric-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 5px;
+        }
+
+        .metric-label {
+            font-size: 12px;
+            color: #666;
+        }
+
+        .warning-message {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .warning-message.active {
+            display: block;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .warning-message strong {
+            color: #856404;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+        }
+
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 25px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: transform 0.2s ease;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .status {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+            font-size: 14px;
+        }
+
+        .status.error {
+            color: #f5576c;
+        }
+
+        .tips {
+            background: #e3f2fd;
+            border-left: 4px solid #2196f3;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 15px;
+        }
+
+        .tips h3 {
+            color: #1976d2;
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+
+        .tips ul {
+            margin-left: 20px;
+            font-size: 13px;
+            color: #555;
+        }
+
+        .tips li {
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🧘 首角度検出システム</h1>
+            <p>正しい姿勢を保ちましょう</p>
+        </div>
+
+        <div class="video-container">
+            <video id="video" autoplay playsinline></video>
+            <canvas id="canvas"></canvas>
+        </div>
+
+        <div class="info-panel">
+            <div class="angle-display" id="angleDisplay">
+                <div class="angle-value" id="angleValue">--°</div>
+                <div class="angle-label">首の前傾角度</div>
+            </div>
+
+            <div class="warning-message" id="warningMessage">
+                <strong>⚠️ 警告:</strong> 首の角度が30度を超えています。姿勢を正してください。
+            </div>
+
+            <div class="metrics">
+                <div class="metric-card">
+                    <div class="metric-value" id="faceAngle">--°</div>
+                    <div class="metric-label">顔の傾き</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="deviceAngle">--°</div>
+                    <div class="metric-label">デバイスの傾き</div>
+                </div>
+            </div>
+
+            <div class="status" id="status">
+                カメラとセンサーの許可を待っています...
+            </div>
+
+            <div class="controls">
+                <button id="startBtn" onclick="startDetection()">開始</button>
+                <button id="stopBtn" onclick="stopDetection()" disabled>停止</button>
+            </div>
+
+            <div class="tips">
+                <h3>💡 使い方</h3>
+                <ul>
+                    <li>スマホのカメラとモーションセンサーへのアクセスを許可してください</li>
+                    <li>前面カメラで顔を映してください</li>
+                    <li>首の角度が30度以上になると警告が表示されます</li>
+                    <li>デバイスを傾けた場合も正確に首の角度を計算します</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
+
+    <script>
+        // グローバル変数
+        let faceMesh;
+        let camera;
+        let deviceOrientation = { beta: 0, gamma: 0, alpha: 0 };
+        let isRunning = false;
+        let lastFaceAngle = 0;
+        let smoothedNeckAngle = 0;
+        const SMOOTHING_FACTOR = 0.3;
+
+        // MediaPipe Face Meshのセットアップ
+        function setupFaceMesh() {
+            const videoElement = document.getElementById('video');
+            const canvasElement = document.getElementById('canvas');
+            const canvasCtx = canvasElement.getContext('2d');
+
+            faceMesh = new FaceMesh({
+                locateFile: (file) => {
+                    return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`;
+                }
+            });
+
+            faceMesh.setOptions({
+                maxNumFaces: 1,
+                refineLandmarks: true,
+                minDetectionConfidence: 0.5,
+                minTrackingConfidence: 0.5
+            });
+
+            faceMesh.onResults(onResults);
+
+            return { videoElement, canvasElement, canvasCtx };
+        }
+
+        // 顔検出結果の処理
+        function onResults(results) {
+            const canvasElement = document.getElementById('canvas');
+            const canvasCtx = canvasElement.getContext('2d');
+
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+
+            if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+                const landmarks = results.multiFaceLandmarks[0];
+
+                // 顔のランドマークを描画
+                drawConnectors(canvasCtx, landmarks, FACEMESH_TESSELATION, { color: '#C0C0C070', lineWidth: 1 });
+                drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE, { color: '#FF3030' });
+                drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE, { color: '#30FF30' });
+                drawConnectors(canvasCtx, landmarks, FACEMESH_FACE_OVAL, { color: '#E0E0E0' });
+
+                // 顔の角度を計算
+                const faceAngle = calculateFaceAngle(landmarks);
+                lastFaceAngle = faceAngle;
+
+                // 首の角度を計算
+                const neckAngle = calculateNeckAngle(faceAngle, deviceOrientation);
+
+                // 平滑化
+                smoothedNeckAngle = smoothedNeckAngle * (1 - SMOOTHING_FACTOR) + neckAngle * SMOOTHING_FACTOR;
+
+                // UIを更新
+                updateUI(smoothedNeckAngle, faceAngle, deviceOrientation.beta);
+
+                // 重要なポイントを描画
+                drawKeyPoints(canvasCtx, landmarks, canvasElement.width, canvasElement.height);
+            }
+
+            canvasCtx.restore();
+        }
+
+        // 顔の角度を計算（ピッチ角度 - 上下の傾き）
+        function calculateFaceAngle(landmarks) {
+            // 鼻の先端 (index 1)
+            const noseTip = landmarks[1];
+
+            // 鼻の付け根 (index 168)
+            const noseBridge = landmarks[168];
+
+            // 顎の先 (index 152)
+            const chin = landmarks[152];
+
+            // 額の中心 (index 10)
+            const forehead = landmarks[10];
+
+            // 顔の中心線のベクトル（額から顎へ）
+            const faceVectorY = chin.y - forehead.y;
+            const faceVectorZ = chin.z - forehead.z;
+
+            // ピッチ角度を計算（前後の傾き）
+            let pitchAngle = Math.atan2(faceVectorZ, faceVectorY) * (180 / Math.PI);
+
+            // 角度を調整（下を向くとプラス）
+            pitchAngle = -pitchAngle;
+
+            // 鼻のベクトルも使用してより正確に
+            const noseVectorY = noseTip.y - noseBridge.y;
+            const noseVectorZ = noseTip.z - noseBridge.z;
+            let noseAngle = Math.atan2(noseVectorZ, noseVectorY) * (180 / Math.PI);
+            noseAngle = -noseAngle;
+
+            // 2つの角度を平均
+            const avgAngle = (pitchAngle + noseAngle) / 2;
+
+            return avgAngle;
+        }
+
+        // 実際の首の角度を計算
+        function calculateNeckAngle(faceAngle, deviceOrientation) {
+            // デバイスのベータ角度（前後の傾き）
+            // beta: 90 = デバイスが立っている, 0 = デバイスが平面
+            let deviceTilt = deviceOrientation.beta || 0;
+
+            // デバイスが立っている状態(90度)を基準にする
+            // デバイスが前に傾くほど、首の角度も増える
+            let deviceAngleContribution = 90 - deviceTilt;
+
+            // 実際の首の角度 = 顔の下向き角度 + デバイスの前傾角度
+            let neckAngle = faceAngle + deviceAngleContribution;
+
+            // 0度を基準に正規化（まっすぐ前を見ている状態が0度）
+            neckAngle = Math.max(0, neckAngle);
+
+            return neckAngle;
+        }
+
+        // 重要なポイントを描画
+        function drawKeyPoints(ctx, landmarks, width, height) {
+            const keyPoints = [
+                { index: 1, color: '#FF0000', label: '鼻先' },
+                { index: 168, color: '#00FF00', label: '鼻付け根' },
+                { index: 10, color: '#0000FF', label: '額' },
+                { index: 152, color: '#FFFF00', label: '顎' }
+            ];
+
+            keyPoints.forEach(point => {
+                const landmark = landmarks[point.index];
+                const x = landmark.x * width;
+                const y = landmark.y * height;
+
+                ctx.beginPath();
+                ctx.arc(x, y, 5, 0, 2 * Math.PI);
+                ctx.fillStyle = point.color;
+                ctx.fill();
+            });
+        }
+
+        // UIを更新
+        function updateUI(neckAngle, faceAngle, deviceBeta) {
+            const angleValue = document.getElementById('angleValue');
+            const faceAngleEl = document.getElementById('faceAngle');
+            const deviceAngleEl = document.getElementById('deviceAngle');
+            const angleDisplay = document.getElementById('angleDisplay');
+            const warningMessage = document.getElementById('warningMessage');
+
+            angleValue.textContent = Math.round(neckAngle) + '°';
+            faceAngleEl.textContent = Math.round(faceAngle) + '°';
+            deviceAngleEl.textContent = Math.round(90 - (deviceBeta || 90)) + '°';
+
+            // 30度以上で警告
+            if (neckAngle >= 30) {
+                angleDisplay.classList.add('warning');
+                warningMessage.classList.add('active');
+            } else {
+                angleDisplay.classList.remove('warning');
+                warningMessage.classList.remove('active');
+            }
+        }
+
+        // デバイスの向きセンサーをセットアップ
+        async function setupDeviceOrientation() {
+            // iOS 13+のための許可リクエスト
+            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                try {
+                    const permission = await DeviceOrientationEvent.requestPermission();
+                    if (permission === 'granted') {
+                        window.addEventListener('deviceorientation', handleOrientation);
+                        return true;
+                    } else {
+                        throw new Error('デバイスの向きセンサーへのアクセスが拒否されました');
+                    }
+                } catch (error) {
+                    console.error('Error requesting device orientation permission:', error);
+                    return false;
+                }
+            } else if (window.DeviceOrientationEvent) {
+                window.addEventListener('deviceorientation', handleOrientation);
+                return true;
+            } else {
+                console.warn('このデバイスはDeviceOrientationをサポートしていません');
+                return false;
+            }
+        }
+
+        // デバイスの向きデータを処理
+        function handleOrientation(event) {
+            deviceOrientation = {
+                alpha: event.alpha, // Z軸周りの回転
+                beta: event.beta,   // X軸周りの回転（前後の傾き）
+                gamma: event.gamma  // Y軸周りの回転（左右の傾き）
+            };
+        }
+
+        // カメラを開始
+        async function startCamera() {
+            const videoElement = document.getElementById('video');
+            const canvasElement = document.getElementById('canvas');
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: 'user',
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    }
+                });
+
+                videoElement.srcObject = stream;
+
+                // ビデオが再生開始したらキャンバスのサイズを設定
+                videoElement.onloadedmetadata = () => {
+                    canvasElement.width = videoElement.videoWidth;
+                    canvasElement.height = videoElement.videoHeight;
+                };
+
+                camera = new Camera(videoElement, {
+                    onFrame: async () => {
+                        await faceMesh.send({ image: videoElement });
+                    },
+                    width: 1280,
+                    height: 720
+                });
+
+                await camera.start();
+                return true;
+            } catch (error) {
+                console.error('カメラの起動に失敗しました:', error);
+                return false;
+            }
+        }
+
+        // 検出を開始
+        async function startDetection() {
+            if (isRunning) return;
+
+            document.getElementById('status').textContent = '初期化中...';
+            document.getElementById('startBtn').disabled = true;
+
+            try {
+                // Face Meshをセットアップ
+                setupFaceMesh();
+
+                // デバイスの向きセンサーをセットアップ
+                const orientationOk = await setupDeviceOrientation();
+                if (!orientationOk) {
+                    document.getElementById('status').textContent = 'デバイスセンサーは利用できませんが、カメラのみで継続します';
+                    document.getElementById('status').classList.add('error');
+                }
+
+                // カメラを開始
+                const cameraOk = await startCamera();
+                if (!cameraOk) {
+                    throw new Error('カメラの起動に失敗しました');
+                }
+
+                isRunning = true;
+                document.getElementById('status').textContent = '検出中... 顔をカメラに向けてください';
+                document.getElementById('status').classList.remove('error');
+                document.getElementById('stopBtn').disabled = false;
+            } catch (error) {
+                console.error('Error starting detection:', error);
+                document.getElementById('status').textContent = 'エラー: ' + error.message;
+                document.getElementById('status').classList.add('error');
+                document.getElementById('startBtn').disabled = false;
+            }
+        }
+
+        // 検出を停止
+        function stopDetection() {
+            if (!isRunning) return;
+
+            if (camera) {
+                camera.stop();
+            }
+
+            const videoElement = document.getElementById('video');
+            if (videoElement.srcObject) {
+                videoElement.srcObject.getTracks().forEach(track => track.stop());
+            }
+
+            isRunning = false;
+            document.getElementById('status').textContent = '停止しました';
+            document.getElementById('startBtn').disabled = false;
+            document.getElementById('stopBtn').disabled = true;
+        }
+
+        // ページ読み込み時
+        window.addEventListener('load', () => {
+            document.getElementById('status').textContent = '準備完了。「開始」ボタンを押してください。';
+        });
+    </script>
+</body>
+</html>
