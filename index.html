@@ -356,7 +356,7 @@
                 </div>
                 <div class="metric-card">
                     <div class="metric-value" id="deviceAngle">--°</div>
-                    <div class="metric-label">デバイスの傾き</div>
+                    <div class="metric-label">デバイスの左右傾き</div>
                 </div>
             </div>
 
@@ -393,8 +393,9 @@
                 <ul>
                     <li>スマホのカメラとモーションセンサーへのアクセスを許可してください</li>
                     <li>前面カメラで顔を映してください</li>
-                    <li>顔が30度以上下を向くと警告が表示されます</li>
-                    <li>デバイスを傾けた場合も正確に顔の向きを計算します</li>
+                    <li>顔の傾き角度がリアルタイムで表示されます（デバイスの傾きも自動補正）</li>
+                    <li>キャリブレーション後、基準値から15度以上傾くと警告音が鳴ります</li>
+                    <li>デバイスを傾けても正確に顔の傾き角度を計算します</li>
                 </ul>
             </div>
         </div>
@@ -417,6 +418,42 @@
         const SMOOTHING_FACTOR = 0.3;
         let baselineAngle = null; // キャリブレーション基準角度
         const WARNING_THRESHOLD = 15; // 警告のしきい値（度）
+        let warningAudioContext = null;
+        let isWarningPlaying = false;
+        let lastWarningTime = 0;
+        const WARNING_INTERVAL = 2000; // 警告音の間隔（ミリ秒）
+
+        // 警告音を再生
+        function playWarningSound() {
+            const currentTime = Date.now();
+            if (currentTime - lastWarningTime < WARNING_INTERVAL) {
+                return; // 前回の警告から十分な時間が経過していない
+            }
+
+            lastWarningTime = currentTime;
+
+            if (!warningAudioContext) {
+                warningAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+
+            const oscillator = warningAudioContext.createOscillator();
+            const gainNode = warningAudioContext.createGain();
+
+            oscillator.connect(gainNode);
+            gainNode.connect(warningAudioContext.destination);
+
+            // 警告音の設定（ビープ音）
+            oscillator.frequency.value = 800; // 周波数 800Hz
+            oscillator.type = 'sine';
+
+            // 音量の設定（フェードイン・フェードアウト）
+            gainNode.gain.setValueAtTime(0, warningAudioContext.currentTime);
+            gainNode.gain.linearRampToValueAtTime(0.3, warningAudioContext.currentTime + 0.1);
+            gainNode.gain.linearRampToValueAtTime(0, warningAudioContext.currentTime + 0.5);
+
+            oscillator.start(warningAudioContext.currentTime);
+            oscillator.stop(warningAudioContext.currentTime + 0.5);
+        }
 
         // MediaPipe Face Meshのセットアップ
         function setupFaceMesh() {
@@ -459,15 +496,18 @@
                 drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE, { color: '#30FF30' });
                 drawConnectors(canvasCtx, landmarks, FACEMESH_FACE_OVAL, { color: '#E0E0E0' });
 
-                // 顔の角度を計算
-                const faceAngle = calculateFaceAngle(landmarks);
-                lastFaceAngle = faceAngle;
+                // 顔の角度を計算（ロール角度 - 左右の傾き）
+                const rawFaceAngle = calculateFaceAngle(landmarks);
+
+                // デバイスの傾きで補正した顔の角度
+                const compensatedFaceAngle = compensateFaceAngleForDevice(rawFaceAngle, deviceOrientation);
+                lastFaceAngle = compensatedFaceAngle;
 
                 // 顔の向き（下向き角度）を計算
-                const faceDirection = calculateFaceDirection(faceAngle, deviceOrientation);
+                const faceDirection = calculateFaceDirection(rawFaceAngle, deviceOrientation);
 
                 // 平滑化
-                smoothedFaceAngle = smoothedFaceAngle * (1 - SMOOTHING_FACTOR) + faceAngle * SMOOTHING_FACTOR;
+                smoothedFaceAngle = smoothedFaceAngle * (1 - SMOOTHING_FACTOR) + compensatedFaceAngle * SMOOTHING_FACTOR;
                 smoothedNeckAngle = smoothedNeckAngle * (1 - SMOOTHING_FACTOR) + faceDirection * SMOOTHING_FACTOR;
 
                 // UIを更新
@@ -480,40 +520,39 @@
             canvasCtx.restore();
         }
 
-        // 顔の角度を計算（ピッチ角度 - 上下の傾き）
+        // 顔の角度を計算（ロール角度 - 左右の傾き）
         function calculateFaceAngle(landmarks) {
-            // 鼻の先端 (index 1)
-            const noseTip = landmarks[1];
+            // 左目の外側 (index 33)
+            const leftEye = landmarks[33];
 
-            // 鼻の付け根 (index 168)
-            const noseBridge = landmarks[168];
+            // 右目の外側 (index 263)
+            const rightEye = landmarks[263];
 
-            // 顎の先 (index 152)
-            const chin = landmarks[152];
+            // 2つの目を結ぶ線の角度を計算（ロール角度）
+            const dx = rightEye.x - leftEye.x;
+            const dy = rightEye.y - leftEye.y;
 
-            // 額の中心 (index 10)
-            const forehead = landmarks[10];
+            // atan2で角度を計算（ラジアンから度に変換）
+            let rollAngle = Math.atan2(dy, dx) * (180 / Math.PI);
 
-            // 顔の中心線のベクトル（額から顎へ）
-            const faceVectorY = chin.y - forehead.y;
-            const faceVectorZ = chin.z - forehead.z;
+            // 角度を正規化（左に傾くとマイナス、右に傾くとプラス）
+            // カメラが反転している場合を考慮
+            rollAngle = -rollAngle;
 
-            // ピッチ角度を計算（前後の傾き）
-            let pitchAngle = Math.atan2(faceVectorZ, faceVectorY) * (180 / Math.PI);
+            return rollAngle;
+        }
 
-            // 角度を調整（下を向くとプラス）
-            pitchAngle = -pitchAngle;
+        // 顔の傾き角度をデバイスの傾きで補正
+        function compensateFaceAngleForDevice(faceRollAngle, deviceOrientation) {
+            // デバイスのガンマ角度（左右の傾き）
+            // gamma: 0 = デバイスが垂直, 正 = 右に傾いている, 負 = 左に傾いている
+            let deviceRoll = deviceOrientation.gamma || 0;
 
-            // 鼻のベクトルも使用してより正確に
-            const noseVectorY = noseTip.y - noseBridge.y;
-            const noseVectorZ = noseTip.z - noseBridge.z;
-            let noseAngle = Math.atan2(noseVectorZ, noseVectorY) * (180 / Math.PI);
-            noseAngle = -noseAngle;
+            // デバイスの傾きを考慮して、実際の顔の傾き角度を計算
+            // デバイスが右に傾いている場合、その分を補正する必要がある
+            let compensatedAngle = faceRollAngle - deviceRoll;
 
-            // 2つの角度を平均
-            const avgAngle = (pitchAngle + noseAngle) / 2;
-
-            return avgAngle;
+            return compensatedAngle;
         }
 
         // 実際の顔の向き（下向き角度）を計算
@@ -564,12 +603,12 @@
             const angleDisplay = document.getElementById('angleDisplay');
             const warningMessage = document.getElementById('warningMessage');
 
-            // メイン表示：顔の傾き角度
+            // メイン表示：顔の傾き角度（デバイス補正済み）
             angleValue.textContent = Math.round(faceAngle) + '°';
 
             // サブメトリクス
             neckAngleEl.textContent = Math.round(neckAngle) + '°';
-            deviceAngleEl.textContent = Math.round(90 - (deviceBeta || 90)) + '°';
+            deviceAngleEl.textContent = Math.round(deviceOrientation.gamma || 0) + '°';
 
             // キャリブレーションされている場合は基準値からの差分で警告
             let shouldWarn = false;
@@ -584,6 +623,8 @@
             if (shouldWarn) {
                 angleDisplay.classList.add('warning');
                 warningMessage.classList.add('active');
+                // 警告音を再生
+                playWarningSound();
             } else {
                 angleDisplay.classList.remove('warning');
                 warningMessage.classList.remove('active');
