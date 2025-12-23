@@ -225,6 +225,106 @@
         .tips li {
             margin-bottom: 5px;
         }
+
+        .calibration-section {
+            background: #f0f4f8;
+            padding: 20px;
+            border-radius: 10px;
+            margin-top: 20px;
+        }
+
+        .calibration-section h3 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 18px;
+        }
+
+        .calibration-section p {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 15px;
+        }
+
+        .calibration-info {
+            margin-top: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: white;
+            padding: 12px;
+            border-radius: 8px;
+        }
+
+        .calibration-info span {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .calibration-info strong {
+            color: #667eea;
+            font-size: 16px;
+        }
+
+        .reset-btn {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            padding: 8px 16px;
+            font-size: 14px;
+        }
+
+        .youtube-section {
+            background: #f0f4f8;
+            padding: 20px;
+            border-radius: 10px;
+            margin-top: 20px;
+        }
+
+        .youtube-section h3 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 18px;
+        }
+
+        .youtube-input {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .youtube-input input {
+            flex: 1;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .youtube-input input:focus {
+            border-color: #667eea;
+        }
+
+        .youtube-input button {
+            white-space: nowrap;
+        }
+
+        #youtubePlayer {
+            margin-top: 15px;
+            border-radius: 10px;
+            overflow: hidden;
+            background: #000;
+        }
+
+        #youtubePlayer iframe {
+            width: 100%;
+            height: 315px;
+            border: none;
+            display: block;
+        }
+
+        #youtubePlayer:empty {
+            display: none;
+        }
     </style>
 </head>
 <body>
@@ -242,17 +342,17 @@
         <div class="info-panel">
             <div class="angle-display" id="angleDisplay">
                 <div class="angle-value" id="angleValue">--°</div>
-                <div class="angle-label">顔の下向き角度</div>
+                <div class="angle-label">顔の傾き角度</div>
             </div>
 
             <div class="warning-message" id="warningMessage">
-                <strong>⚠️ 警告:</strong> 顔が30度以上下を向いています。姿勢を正してください。
+                <strong>⚠️ 警告:</strong> 顔が基準値から大きく傾いています。姿勢を正してください。
             </div>
 
             <div class="metrics">
                 <div class="metric-card">
-                    <div class="metric-value" id="faceAngle">--°</div>
-                    <div class="metric-label">顔の傾き</div>
+                    <div class="metric-value" id="neckAngle">--°</div>
+                    <div class="metric-label">顔の下向き角度</div>
                 </div>
                 <div class="metric-card">
                     <div class="metric-value" id="deviceAngle">--°</div>
@@ -267,6 +367,25 @@
             <div class="controls">
                 <button id="startBtn" onclick="startDetection()">開始</button>
                 <button id="stopBtn" onclick="stopDetection()" disabled>停止</button>
+            </div>
+
+            <div class="calibration-section">
+                <h3>🎯 キャリブレーション</h3>
+                <p>正しい姿勢で以下のボタンを押して、基準角度を設定してください。</p>
+                <button onclick="calibrate()">現在の角度を基準に設定</button>
+                <div class="calibration-info">
+                    <span>基準角度: <strong id="baselineAngle">未設定</strong></span>
+                    <button onclick="resetCalibration()" class="reset-btn">リセット</button>
+                </div>
+            </div>
+
+            <div class="youtube-section">
+                <h3>📺 YouTube動画再生</h3>
+                <div class="youtube-input">
+                    <input type="text" id="youtubeUrl" placeholder="YouTubeのURLを入力してください" />
+                    <button onclick="loadYouTube()">動画を読み込む</button>
+                </div>
+                <div id="youtubePlayer"></div>
             </div>
 
             <div class="tips">
@@ -294,7 +413,10 @@
         let isRunning = false;
         let lastFaceAngle = 0;
         let smoothedFaceAngle = 0;
+        let smoothedNeckAngle = 0;
         const SMOOTHING_FACTOR = 0.3;
+        let baselineAngle = null; // キャリブレーション基準角度
+        const WARNING_THRESHOLD = 15; // 警告のしきい値（度）
 
         // MediaPipe Face Meshのセットアップ
         function setupFaceMesh() {
@@ -345,10 +467,11 @@
                 const faceDirection = calculateFaceDirection(faceAngle, deviceOrientation);
 
                 // 平滑化
-                smoothedFaceAngle = smoothedFaceAngle * (1 - SMOOTHING_FACTOR) + faceDirection * SMOOTHING_FACTOR;
+                smoothedFaceAngle = smoothedFaceAngle * (1 - SMOOTHING_FACTOR) + faceAngle * SMOOTHING_FACTOR;
+                smoothedNeckAngle = smoothedNeckAngle * (1 - SMOOTHING_FACTOR) + faceDirection * SMOOTHING_FACTOR;
 
                 // UIを更新
-                updateUI(smoothedFaceAngle, faceAngle, deviceOrientation.beta);
+                updateUI(smoothedFaceAngle, smoothedNeckAngle, deviceOrientation.beta);
 
                 // 重要なポイントを描画
                 drawKeyPoints(canvasCtx, landmarks, canvasElement.width, canvasElement.height);
@@ -434,19 +557,31 @@
         }
 
         // UIを更新
-        function updateUI(faceDirectionAngle, facePitchAngle, deviceBeta) {
+        function updateUI(faceAngle, neckAngle, deviceBeta) {
             const angleValue = document.getElementById('angleValue');
-            const faceAngleEl = document.getElementById('faceAngle');
+            const neckAngleEl = document.getElementById('neckAngle');
             const deviceAngleEl = document.getElementById('deviceAngle');
             const angleDisplay = document.getElementById('angleDisplay');
             const warningMessage = document.getElementById('warningMessage');
 
-            angleValue.textContent = Math.round(faceDirectionAngle) + '°';
-            faceAngleEl.textContent = Math.round(facePitchAngle) + '°';
+            // メイン表示：顔の傾き角度
+            angleValue.textContent = Math.round(faceAngle) + '°';
+
+            // サブメトリクス
+            neckAngleEl.textContent = Math.round(neckAngle) + '°';
             deviceAngleEl.textContent = Math.round(90 - (deviceBeta || 90)) + '°';
 
-            // 30度以上で警告
-            if (faceDirectionAngle >= 30) {
+            // キャリブレーションされている場合は基準値からの差分で警告
+            let shouldWarn = false;
+            if (baselineAngle !== null) {
+                const deviation = Math.abs(faceAngle - baselineAngle);
+                shouldWarn = deviation >= WARNING_THRESHOLD;
+            } else {
+                // キャリブレーションされていない場合は絶対値で判定
+                shouldWarn = Math.abs(faceAngle) >= 30;
+            }
+
+            if (shouldWarn) {
                 angleDisplay.classList.add('warning');
                 warningMessage.classList.add('active');
             } else {
@@ -582,9 +717,83 @@
             document.getElementById('stopBtn').disabled = true;
         }
 
+        // キャリブレーション
+        function calibrate() {
+            if (smoothedFaceAngle === 0) {
+                alert('顔が検出されていません。カメラを開始してから再度お試しください。');
+                return;
+            }
+
+            baselineAngle = smoothedFaceAngle;
+            document.getElementById('baselineAngle').textContent = Math.round(baselineAngle) + '°';
+
+            // ローカルストレージに保存
+            localStorage.setItem('faceAngleBaseline', baselineAngle);
+
+            alert('基準角度を設定しました: ' + Math.round(baselineAngle) + '°');
+        }
+
+        // キャリブレーションのリセット
+        function resetCalibration() {
+            baselineAngle = null;
+            document.getElementById('baselineAngle').textContent = '未設定';
+            localStorage.removeItem('faceAngleBaseline');
+            alert('基準角度をリセットしました。');
+        }
+
+        // YouTube動画を読み込む
+        function loadYouTube() {
+            const url = document.getElementById('youtubeUrl').value.trim();
+            if (!url) {
+                alert('YouTubeのURLを入力してください。');
+                return;
+            }
+
+            // YouTubeのURLからビデオIDを抽出
+            let videoId = null;
+
+            // 標準URL: https://www.youtube.com/watch?v=VIDEO_ID
+            let match = url.match(/[?&]v=([^&]+)/);
+            if (match) {
+                videoId = match[1];
+            }
+
+            // 短縮URL: https://youtu.be/VIDEO_ID
+            if (!videoId) {
+                match = url.match(/youtu\.be\/([^?]+)/);
+                if (match) {
+                    videoId = match[1];
+                }
+            }
+
+            // 埋め込みURL: https://www.youtube.com/embed/VIDEO_ID
+            if (!videoId) {
+                match = url.match(/embed\/([^?]+)/);
+                if (match) {
+                    videoId = match[1];
+                }
+            }
+
+            if (!videoId) {
+                alert('有効なYouTubeのURLを入力してください。');
+                return;
+            }
+
+            // iframeを生成
+            const playerDiv = document.getElementById('youtubePlayer');
+            playerDiv.innerHTML = `<iframe src="https://www.youtube.com/embed/${videoId}" allowfullscreen></iframe>`;
+        }
+
         // ページ読み込み時
         window.addEventListener('load', () => {
             document.getElementById('status').textContent = '準備完了。「開始」ボタンを押してください。';
+
+            // 保存された基準角度を読み込む
+            const savedBaseline = localStorage.getItem('faceAngleBaseline');
+            if (savedBaseline) {
+                baselineAngle = parseFloat(savedBaseline);
+                document.getElementById('baselineAngle').textContent = Math.round(baselineAngle) + '°';
+            }
         });
     </script>
 </body>
